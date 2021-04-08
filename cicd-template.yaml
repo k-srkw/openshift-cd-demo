@@ -44,9 +44,15 @@ parameters:
   name: QUAY_REPOSITORY
   required: true
   value: tasks-app
-- displayName: Git Repository URL
-  description: Git Repository URL
-  name: GOGS_GIT_URL
+- displayName: SonarQube Username
+  description: SonarQube username to analyze code on SonarQube server
+  value: "admin"
+  name: SONAR_USERNAME
+  required: true
+- displayName: Quay.io Password
+  description: SonarQube password to analyze code on SonarQube server
+  value: "adminadmin"
+  name: SONAR_PASSWORD
   required: true
 objects:
 - apiVersion: v1
@@ -82,7 +88,7 @@ objects:
       type: Git
       git:
         uri: >-
-          ${GOGS_GIT_URL}
+          http://gogs:3000/gogs/openshift-tasks.git
         ref: eap-7
     strategy:
       jenkinsPipelineStrategy:
@@ -179,7 +185,7 @@ objects:
   metadata:
     name: cicd-demo-installer
   spec:
-    activeDeadlineSeconds: 400
+    activeDeadlineSeconds: 600
     completions: 1
     parallelism: 1
     template:
@@ -276,6 +282,9 @@ objects:
             oc set probe deployment/sonarqube --liveness --period-seconds=10
             oc set probe deployment/sonarqube --readiness --period-seconds=10
 
+            oc create secret generic sonar-cicd-secret --from-literal="username=${SONAR_USERNAME}" --from-literal="password=${SONAR_PASSWORD}" -n ${CICD_NAMESPACE}
+            oc label secret sonar-cicd-secret credential.sync.jenkins.openshift.io=true -n ${CICD_NAMESPACE}
+
             if [ "${EPHEMERAL}" == "true" ] ; then
               oc new-app -f https://raw.githubusercontent.com/OpenShiftDemos/nexus/master/nexus3-template.yaml --param=NEXUS_VERSION=3.13.0 --param=MAX_MEMORY=2Gi
             else
@@ -294,6 +303,7 @@ objects:
             sleep 10
 
             # Try 10 times to create the admin user. Fail after that.
+            set +e
             for i in {1..10};
             do
 
@@ -360,6 +370,7 @@ objects:
               cat /tmp/curl.log
               exit 255
             fi
+            set -e
 
             oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
             oc label dc nexus "app.kubernetes.io/part-of"="nexus" --overwrite
